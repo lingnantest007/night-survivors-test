@@ -1,0 +1,213 @@
+{
+  "screen": {
+    "width": 390,
+    "height": 700,
+    "fps": 60
+  },
+  "game": {
+    "victory_time": 120.0
+  },
+  "hero": {
+    "speed": 120.0,
+    "hp": 100.0,
+    "hit_radius": 12.0,
+    "magnet_radius": 60.0,
+    "pointer_stop_distance": 12.0
+  },
+  "weapons": {
+    "max_weapons": 3,
+    "spark_wand": {
+      "name": "Spark Wand",
+      "short": "Spark",
+      "speed": 400.0,
+      "level1": {
+        "damage": 10.0,
+        "cooldown": 0.8,
+        "sparks": 1
+      },
+      "per_level": {
+        "damage": 3.0,
+        "cooldown": 0.08,
+        "extra_spark_at": [
+          3,
+          5
+        ]
+      },
+      "spark_radius": 4.0,
+      "spark_lifetime": 2.0
+    },
+    "spin_blades": {
+      "name": "Spin Blades",
+      "short": "Blades",
+      "orbit_radius": 60.0,
+      "turn_time": 1.5,
+      "hit_cooldown": 0.5,
+      "blade_radius": 6.0,
+      "level1": {
+        "blades": 2,
+        "damage": 8.0
+      },
+      "per_level": {
+        "damage": 3.0,
+        "extra_blade_at": [
+          2,
+          4
+        ]
+      }
+    },
+    "holy_ring": {
+      "name": "Holy Ring",
+      "short": "Ring",
+      "cooldown": 0.5,
+      "level1": {
+        "damage": 5.0,
+        "radius": 50.0
+      },
+      "per_level": {
+        "damage": 2.0,
+        "radius": 10.0
+      }
+    }
+  },
+  "passives": {
+    "swift_boots": {
+      "name": "Swift Boots",
+      "short": "Boots",
+      "speed_percent": 10.0
+    },
+    "big_heart": {
+      "name": "Big Heart",
+      "short": "Heart",
+      "max_hp": 20.0,
+      "heal": 20.0
+    },
+    "magnet": {
+      "name": "Magnet",
+      "short": "Magnet",
+      "magnet_radius": 30.0
+    }
+  },
+  "enemies": {
+    "bat": {
+      "name": "Bat",
+      "hp": 8.0,
+      "speed": 100.0,
+      "damage": 5.0,
+      "xp": 1,
+      "picture": "bat.png",
+      "radius": 10.0
+    },
+    "slime": {
+      "name": "Slime",
+      "hp": 30.0,
+      "speed": 55.0,
+      "damage": 8.0,
+      "xp": 2,
+      "picture": "slime.png",
+      "radius": 12.0
+    },
+    "ghost": {
+      "name": "Ghost",
+      "hp": 15.0,
+      "speed": 135.0,
+      "damage": 6.0,
+      "xp": 2,
+      "picture": "ghost.png",
+      "radius": 11.0
+    },
+    "demon": {
+      "name": "Demon",
+      "hp": 800.0,
+      "speed": 85.0,
+      "damage": 20.0,
+      "xp": 0,
+      "picture": "demon.png",
+      "radius": 18.0,
+      "draw_scale": 2.0
+    }
+  },
+  "contact": {
+    "hurt_cooldown": 0.5
+  },
+  "spawning": {
+    "interval": 1.0,
+    "max_per_second": 8,
+    "ring_radius": 380,
+    "cull_radius": 700.0,
+    "boss_return_radius": 600.0,
+    "max_alive": 120,
+    "waves": [
+      {
+        "from": 0,
+        "types": [
+          "Bat"
+        ],
+        "minimum": 12
+      },
+      {
+        "from": 15,
+        "types": [
+          "Bat"
+        ],
+        "minimum": 20
+      },
+      {
+        "from": 30,
+        "types": [
+          "Bat",
+          "Slime"
+        ],
+        "minimum": 28
+      },
+      {
+        "from": 45,
+        "types": [
+          "Slime",
+          "Ghost"
+        ],
+        "minimum": 36
+      },
+      {
+        "from": 60,
+        "types": [
+          "Bat",
+          "Ghost"
+        ],
+        "minimum": 45
+      },
+      {
+        "from": 75,
+        "types": [
+          "Bat",
+          "Slime",
+          "Ghost"
+        ],
+        "minimum": 55
+      },
+      {
+        "from": 90,
+        "types": [
+          "Bat",
+          "Slime"
+        ],
+        "minimum": 55,
+        "boss": "Demon"
+      },
+      {
+        "from": 105,
+        "types": [
+          "Bat"
+        ],
+        "minimum": 75
+      }
+    ]
+  },
+  "progress": {
+    "item_max_level": 5,
+    "cards_per_level_up": 3,
+    "xp_first_level": 5,
+    "xp_increase": 3,
+    "gem_speed": 300.0,
+    "heal_amount": 30.0
+  }
+}
