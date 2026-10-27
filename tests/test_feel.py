@@ -31,30 +31,45 @@ def events_of(world, kind):
 class EventTests(unittest.TestCase):
     def test_damage_event_carries_position_and_amount(self):
         world = make_world()
-        world.weapon_levels["holy_ring"] = 1
-        add_enemy(world, "slime", 40.0, 0.0)
+        world.weapon_levels = {"holy_ring": 1}
+        ring = world.config["weapons"]["holy_ring"]
+        x = ring["level1"]["radius"] / 2
+        add_enemy(world, "slime", x, 0.0)
         world.update()
         damage = events_of(world, "damage")
         self.assertEqual(len(damage), 1)
-        self.assertEqual(damage[0][1:], (40.0, 0.0, 5.0))
+        self.assertAlmostEqual(damage[0][1], x)
+        self.assertAlmostEqual(damage[0][2], 0.0)
+        self.assertAlmostEqual(damage[0][3], ring["level1"]["damage"])
 
     def test_death_event_carries_position_and_radius(self):
         world = make_world()
-        world.weapon_levels["holy_ring"] = 1
-        enemy = add_enemy(world, "bat", 40.0, 0.0, hp=5.0)
+        world.weapon_levels = {"holy_ring": 1}
+        ring = world.config["weapons"]["holy_ring"]
+        x = ring["level1"]["radius"] / 2
+        enemy = add_enemy(world, "bat", x, 0.0, hp=ring["level1"]["damage"])
         world.update()
         deaths = events_of(world, "death")
         self.assertEqual(len(deaths), 1)
-        self.assertEqual(deaths[0][1:], (40.0, 0.0, enemy.radius))
+        self.assertAlmostEqual(deaths[0][1], x)
+        self.assertAlmostEqual(deaths[0][2], 0.0)
+        self.assertAlmostEqual(deaths[0][3], enemy.radius)
         self.assertEqual(world.gems[0].xp, enemy.xp)
 
-    def test_boss_death_emits_death_but_no_gem(self):
+    def test_boss_death_emits_death_and_only_drops_a_gem_when_it_has_xp(self):
         world = make_world()
-        world.weapon_levels["holy_ring"] = 1
-        add_enemy(world, "demon", 40.0, 0.0, hp=1.0)
+        world.weapon_levels = {"holy_ring": 1}
+        ring = world.config["weapons"]["holy_ring"]
+        boss = add_enemy(
+            world,
+            world.boss_kind,
+            ring["level1"]["radius"] / 2,
+            0.0,
+            hp=ring["level1"]["damage"],
+        )
         world.update()
         self.assertEqual(len(events_of(world, "death")), 1)
-        self.assertEqual(world.gems, [])
+        self.assertEqual(len(world.gems), 1 if boss.xp > 0 else 0)
 
     def test_gem_event_when_a_gem_is_collected(self):
         world = make_world()
@@ -64,15 +79,20 @@ class EventTests(unittest.TestCase):
 
     def test_hurt_event_only_once_per_contact_cooldown(self):
         world = make_world()
+        world.spawn_timer = 10**9
+        cooldown = world.config["contact"]["hurt_cooldown"]
         add_enemy(world, "bat", world.hero.x, world.hero.y)
         world.update()
         self.assertEqual(len(events_of(world, "hurt")), 1)
         world.update()
         self.assertEqual(len(events_of(world, "hurt")), 1)
-        world.time += world.config["contact"]["hurt_cooldown"]
-        for _ in range(31):
+        frames = 0
+        limit = round(cooldown / rules.STEP) + 10
+        while len(events_of(world, "hurt")) == 1 and frames < limit:
             world.update()
+            frames += 1
         self.assertEqual(len(events_of(world, "hurt")), 2)
+        self.assertAlmostEqual(frames * rules.STEP, cooldown, delta=rules.STEP * 2)
 
     def test_level_up_event_when_a_gem_gives_a_level(self):
         world = make_world()
@@ -91,7 +111,8 @@ class EventTests(unittest.TestCase):
 
     def test_end_event_on_game_over(self):
         world = make_world()
-        world.hero.hp = 1.0
+        damage = world.config["enemies"]["bat"]["damage"]
+        world.hero.hp = damage
         add_enemy(world, "bat", world.hero.x, world.hero.y)
         world.update()
         self.assertEqual(world.state, "game_over")

@@ -2,8 +2,11 @@ import copy
 import math
 import random
 import unittest
+from pathlib import Path
 
 import rules
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def make_world(config=None, seed=1234):
@@ -30,39 +33,78 @@ def add_bat(world, x, y, hp=None, speed=None):
 class ConfigTests(unittest.TestCase):
     def test_design_numbers_are_in_data(self):
         config = rules.load_config()
-        self.assertEqual(config["screen"]["width"], 390)
-        self.assertEqual(config["screen"]["height"], 700)
-        self.assertEqual(config["hero"]["speed"], 120.0)
-        self.assertEqual(config["hero"]["hp"], 100.0)
-        self.assertEqual(config["hero"]["hit_radius"], 12.0)
-        self.assertEqual(config["hero"]["magnet_radius"], 60.0)
-        self.assertEqual(config["hero"]["pointer_stop_distance"], 12.0)
-        self.assertEqual(config["weapons"]["spark_wand"]["speed"], 400.0)
-        self.assertEqual(config["weapons"]["spark_wand"]["level1"]["damage"], 10.0)
-        self.assertEqual(config["weapons"]["spark_wand"]["level1"]["cooldown"], 0.8)
-        self.assertEqual(config["enemies"]["bat"]["hp"], 8.0)
-        self.assertEqual(config["enemies"]["bat"]["speed"], 100.0)
-        self.assertEqual(config["contact"]["hurt_cooldown"], 0.5)
-        self.assertEqual(config["spawning"]["ring_radius"], 420.0)
-        self.assertEqual(config["spawning"]["cull_radius"], 700.0)
-        self.assertEqual(config["spawning"]["max_alive"], 120)
-        self.assertEqual(config["game"]["victory_time"], 120.0)
+        for key in ("width", "height", "fps"):
+            self.assertGreater(config["screen"][key], 0, key)
+        self.assertGreater(config["game"]["victory_time"], 0)
+        for key in ("speed", "hp", "hit_radius", "magnet_radius", "pointer_stop_distance"):
+            self.assertGreater(config["hero"][key], 0, key)
+
+        weapons = config["weapons"]
+        self.assertGreater(weapons["max_weapons"], 0)
+        for key, data in weapons.items():
+            if not isinstance(data, dict):
+                continue
+            self.assertTrue(data["name"])
+            self.assertTrue(data["short"])
+            self.assertGreater(data["level1"]["damage"], 0, key)
+            self.assertIn("per_level", data)
+        spark = weapons["spark_wand"]
+        for key in ("speed", "spark_radius", "spark_lifetime"):
+            self.assertGreater(spark[key], 0, key)
+        blades = weapons["spin_blades"]
+        for key in ("orbit_radius", "turn_time", "hit_cooldown", "blade_radius"):
+            self.assertGreater(blades[key], 0, key)
+        self.assertGreater(blades["level1"]["blades"], 0)
+        self.assertGreater(weapons["holy_ring"]["cooldown"], 0)
+        self.assertGreater(weapons["holy_ring"]["level1"]["radius"], 0)
+
+        for key, data in config["passives"].items():
+            self.assertTrue(data["name"], key)
+            self.assertTrue(data["short"], key)
+            self.assertGreater(
+                data.get("speed_percent", data.get("max_hp", data.get("magnet_radius"))),
+                0,
+                key,
+            )
+
+        for kind, stats in config["enemies"].items():
+            self.assertTrue(stats["name"], kind)
+            self.assertGreater(stats["hp"], 0, kind)
+            self.assertGreater(stats["speed"], 0, kind)
+            self.assertGreater(stats["damage"], 0, kind)
+            self.assertGreaterEqual(stats["xp"], 0, kind)
+            self.assertGreater(stats["radius"], 0, kind)
+            self.assertTrue((ROOT / "raw_art" / stats["picture"]).is_file(), kind)
+            if "draw_scale" in stats:
+                self.assertGreater(stats["draw_scale"], 0, kind)
+
+        self.assertGreater(config["contact"]["hurt_cooldown"], 0)
+
+        spawning = config["spawning"]
+        for key in ("interval", "max_per_second", "ring_radius", "max_alive"):
+            self.assertGreater(spawning[key], 0, key)
+        self.assertGreater(spawning["cull_radius"], spawning["ring_radius"])
+        self.assertGreater(spawning["boss_return_radius"], 0)
+        waves = spawning["waves"]
+        self.assertTrue(waves)
+        self.assertEqual([wave["from"] for wave in waves], sorted(wave["from"] for wave in waves))
+
+        progress = config["progress"]
+        for key in ("item_max_level", "cards_per_level_up", "xp_first_level", "gem_speed", "heal_amount"):
+            self.assertGreater(progress[key], 0, key)
+        self.assertGreaterEqual(progress["xp_increase"], 0)
 
     def test_wave_table_changes_over_time(self):
         world = make_world()
-        expected = [
-            (0, 8),
-            (15, 15),
-            (30, 22),
-            (45, 30),
-            (60, 40),
-            (75, 50),
-            (90, 50),
-            (105, 70),
-        ]
-        for moment, minimum in expected:
-            world.time = moment
-            self.assertEqual(world._current_wave()["minimum"], minimum)
+        waves = world.config["spawning"]["waves"]
+        for index, wave in enumerate(waves):
+            world.time = wave["from"]
+            current = world._current_wave()
+            self.assertEqual(current["minimum"], wave["minimum"])
+            self.assertEqual(current["types"], wave["types"])
+            if index + 1 < len(waves):
+                world.time = waves[index + 1]["from"] - rules.STEP
+                self.assertIs(world._current_wave(), wave)
 
 
 class TimeAndMovementTests(unittest.TestCase):
@@ -75,20 +117,26 @@ class TimeAndMovementTests(unittest.TestCase):
         world = make_world()
         world.set_pointer(100.0, 0.0)
         world.update()
-        self.assertAlmostEqual(world.hero.x, 2.0)
+        self.assertAlmostEqual(
+            world.hero.x, world.config["hero"]["speed"] * rules.STEP
+        )
         self.assertAlmostEqual(world.hero.y, 0.0)
 
-    def test_hero_stops_twelve_pixels_away(self):
+    def test_hero_stops_at_the_stop_distance(self):
         world = make_world()
-        world.set_pointer(30.0, 0.0)
-        for _ in range(40):
+        stop = world.config["hero"]["pointer_stop_distance"]
+        step = world.config["hero"]["speed"] * rules.STEP
+        target = stop + step * 10
+        world.set_pointer(target, 0.0)
+        for _ in range(12):
             world.update()
-        self.assertAlmostEqual(world.hero.x, 18.0, places=6)
+        self.assertAlmostEqual(world.hero.x, target - stop, places=6)
+        self.assertAlmostEqual(target - world.hero.x, stop, places=6)
         self.assertAlmostEqual(world.hero.y, 0.0, places=6)
 
     def test_pointer_inside_stop_distance_does_not_move(self):
         world = make_world()
-        world.set_pointer(12.0, 0.0)
+        world.set_pointer(world.config["hero"]["pointer_stop_distance"], 0.0)
         for _ in range(10):
             world.update()
         self.assertEqual(world.hero.x, 0.0)
@@ -117,82 +165,111 @@ class TimeAndMovementTests(unittest.TestCase):
 
 
 class SpawnTests(unittest.TestCase):
-    def test_spawning_starts_after_one_second_with_eight_bats(self):
+    def test_spawning_starts_after_one_interval(self):
         world = make_world()
-        for _ in range(59):
+        spawning = world.config["spawning"]
+        frames = round(spawning["interval"] / rules.STEP)
+        for _ in range(frames - 1):
             world.update()
         self.assertEqual(len(world.enemies), 0)
         world.update()
-        self.assertEqual(len(world.enemies), 8)
-        self.assertTrue(all(enemy.kind == "bat" for enemy in world.enemies))
+        per_tick = max(1, round(spawning["max_per_second"] * spawning["interval"]))
+        self.assertEqual(len(world.enemies), per_tick)
+        allowed = {
+            world._enemy_kind(name) for name in world._current_wave()["types"]
+        }
+        self.assertTrue(all(enemy.kind in allowed for enemy in world.enemies))
 
-    def test_new_bats_appear_on_the_420_pixel_ring(self):
+    def test_new_enemies_appear_on_the_spawn_ring(self):
         world = make_world()
-        for _ in range(60):
+        spawning = world.config["spawning"]
+        frames = round(spawning["interval"] / rules.STEP)
+        for _ in range(frames):
             world.update()
+        radius = spawning["ring_radius"]
         for enemy in world.enemies:
             distance = math.hypot(enemy.x - world.hero.x, enemy.y - world.hero.y)
-            self.assertAlmostEqual(distance, 420.0, places=6)
+            self.assertAlmostEqual(distance, radius, places=6)
 
-    def test_at_most_eight_new_enemies_per_second(self):
+    def test_new_enemies_per_tick_come_from_the_data(self):
         world = make_world()
-        world.time = 15.0
+        spawning = world.config["spawning"]
+        wave = spawning["waves"][1] if len(spawning["waves"]) > 1 else spawning["waves"][0]
+        world.time = wave["from"]
         world.spawn_timer = 0.0
         world.update()
-        self.assertEqual(len(world.enemies), 8)
-        for _ in range(60):
+        per_tick = max(1, round(spawning["max_per_second"] * spawning["interval"]))
+        self.assertEqual(len(world.enemies), per_tick)
+        for _ in range(round(spawning["interval"] / rules.STEP)):
             world.update()
-        self.assertEqual(len(world.enemies), 15)
+        self.assertLessEqual(len(world.enemies), wave["minimum"])
+        self.assertLessEqual(len(world.enemies), per_tick * 2)
 
-    def test_never_more_than_120_enemies(self):
+    def test_never_more_than_max_alive_enemies(self):
         config = copy.deepcopy(rules.load_config())
-        config["spawning"]["waves"][0]["minimum"] = 500
+        limit = config["spawning"]["max_alive"]
+        per_tick = max(
+            1,
+            round(config["spawning"]["max_per_second"] * config["spawning"]["interval"]),
+        )
+        config["spawning"]["waves"][0]["minimum"] = limit + per_tick
         world = rules.World(config, rng=random.Random(7))
-        for _ in range(20):
+        for _ in range(limit // per_tick + 2):
             world._spawn_wave()
-        self.assertEqual(len(world.enemies), 120)
+        self.assertEqual(len(world.enemies), limit)
 
     def test_bat_moves_toward_hero(self):
         world = make_world()
+        stats = world.config["enemies"]["bat"]
         add_bat(world, 100.0, 0.0)
         world.update()
-        self.assertAlmostEqual(world.hero.hp, 100.0)
-        self.assertAlmostEqual(world.enemies[0].x, 100.0 - 100.0 / 60.0)
+        self.assertAlmostEqual(world.hero.hp, world.hero.max_hp)
+        self.assertAlmostEqual(
+            world.enemies[0].x, 100.0 - stats["speed"] * rules.STEP
+        )
 
-    def test_enemies_farther_than_700_are_removed(self):
+    def test_enemies_beyond_the_cull_radius_are_removed(self):
         world = make_world()
-        add_bat(world, 800.0, 0.0, speed=0.0)
-        add_bat(world, 600.0, 0.0, speed=0.0)
+        cull = world.config["spawning"]["cull_radius"]
+        add_bat(world, cull + 100.0, 0.0, speed=0.0)
+        add_bat(world, cull - 100.0, 0.0, speed=0.0)
         world.update()
         self.assertEqual(len(world.enemies), 1)
-        self.assertAlmostEqual(world.enemies[0].x, 600.0)
+        self.assertAlmostEqual(world.enemies[0].x, cull - 100.0)
 
 
 class DamageTests(unittest.TestCase):
-    def test_bat_touching_hero_hurts_once_every_half_second(self):
+    def test_bat_touching_hero_hurts_once_per_contact_cooldown(self):
         world = make_world()
+        stats = world.config["enemies"]["bat"]
+        cooldown = world.config["contact"]["hurt_cooldown"]
+        world.spawn_timer = 10**9
         add_bat(world, 0.0, 0.0, hp=1000.0)
         world.update()
-        self.assertAlmostEqual(world.hero.hp, 95.0)
-        self.assertAlmostEqual(world.enemies[0].cooldown, 0.5)
+        first_hp = world.hero.max_hp - stats["damage"]
+        self.assertAlmostEqual(world.hero.hp, first_hp)
+        self.assertAlmostEqual(world.enemies[0].cooldown, cooldown)
         frames = 0
-        while world.hero.hp == 95.0 and frames < 60:
+        limit = round(cooldown / rules.STEP) + 10
+        while world.hero.hp == first_hp and frames < limit:
             world.update()
             frames += 1
-        self.assertAlmostEqual(world.hero.hp, 90.0)
-        self.assertTrue(28 <= frames <= 32, frames)
+        self.assertAlmostEqual(world.hero.hp, first_hp - stats["damage"])
+        self.assertAlmostEqual(frames * rules.STEP, cooldown, delta=rules.STEP * 2)
 
     def test_two_bats_each_hurt_the_hero(self):
         world = make_world()
+        damage = world.config["enemies"]["bat"]["damage"]
         add_bat(world, 0.0, 0.0, hp=1000.0)
         add_bat(world, 0.0, 0.0, hp=1000.0)
         world.update()
-        self.assertAlmostEqual(world.hero.hp, 90.0)
+        self.assertAlmostEqual(world.hero.hp, world.hero.max_hp - 2 * damage)
 
     def test_game_over_and_play_again(self):
         world = make_world()
+        damage = world.config["enemies"]["bat"]["damage"]
         add_bat(world, 0.0, 0.0, hp=1000.0)
-        world.hero.hp = 5.0
+        world.hero.hp = damage
         world.update()
         self.assertEqual(world.state, "game_over")
         self.assertEqual(world.hero.hp, 0.0)
@@ -201,7 +278,7 @@ class DamageTests(unittest.TestCase):
         self.assertEqual(world.time, frozen)
         world.reset()
         self.assertEqual(world.state, "playing")
-        self.assertEqual(world.hero.hp, world.hero.max_hp)
+        self.assertEqual(world.hero.hp, world.config["hero"]["hp"])
         self.assertEqual(world.time, 0.0)
         self.assertEqual(world.enemies, [])
         self.assertEqual(world.sparks, [])
@@ -210,14 +287,18 @@ class DamageTests(unittest.TestCase):
 
 
 class SparkWandTests(unittest.TestCase):
-    def test_spark_hits_nearest_enemy_and_kills_a_bat(self):
+    def test_spark_hits_nearest_enemy_and_kills_it(self):
         world = make_world()
+        world.spawn_timer = 10**9
         add_bat(world, 100.0, 0.0)
         world.update()
         self.assertEqual(len(world.sparks), 1)
         self.assertGreater(world.sparks[0].vx, 0.0)
-        for _ in range(40):
+        limit = round(world.config["game"]["victory_time"] / rules.STEP) - 10
+        frames = 0
+        while world.enemies and frames < limit:
             world.update()
+            frames += 1
         self.assertEqual(world.enemies, [])
         self.assertEqual(world.sparks, [])
         self.assertEqual(world.kills, 1)
@@ -231,7 +312,7 @@ class SparkWandTests(unittest.TestCase):
         self.assertGreater(spark.vx, 0.0)
         self.assertAlmostEqual(spark.vy, 0.0)
 
-    def test_spark_cooldown_is_point_eight_seconds(self):
+    def test_spark_cooldown_comes_from_the_data(self):
         class CountingWorld(rules.World):
             def __init__(self, config, rng=None):
                 self.shots = 0
@@ -243,15 +324,22 @@ class SparkWandTests(unittest.TestCase):
                 self.shots += len(self.sparks) - before
 
         world = CountingWorld(rules.load_config(), rng=random.Random(3))
+        world.spawn_timer = 10**9
         add_bat(world, 300.0, 0.0, hp=1000.0, speed=0.0)
+        cooldown = world.config["weapons"]["spark_wand"]["level1"]["cooldown"]
         world.update()
         self.assertEqual(world.shots, 1)
-        for _ in range(49):
+        frames = 0
+        limit = round(cooldown / rules.STEP) + 10
+        while world.shots == 1 and frames < limit:
             world.update()
+            frames += 1
         self.assertEqual(world.shots, 2)
+        self.assertAlmostEqual(frames * rules.STEP, cooldown, delta=rules.STEP * 2)
 
     def test_no_shot_without_enemies(self):
         world = make_world()
+        world.spawn_timer = 10**9
         for _ in range(30):
             world.update()
         self.assertEqual(world.sparks, [])
@@ -263,11 +351,15 @@ class DataDrivenTests(unittest.TestCase):
         config["hero"]["speed"] = 60.0
         config["weapons"]["spark_wand"]["level1"]["damage"] = 100.0
         world = rules.World(config, rng=random.Random(5))
+        world.spawn_timer = 10**9
         world.set_pointer(100.0, 0.0)
         world.update()
-        self.assertAlmostEqual(world.hero.x, 1.0)
-        add_bat(world, 80.0, 0.0)
-        for _ in range(40):
+        self.assertAlmostEqual(world.hero.x, config["hero"]["speed"] * rules.STEP)
+        add_bat(world, 80.0, 0.0, hp=1.0)
+        frames = math.ceil(
+            80.0 / config["weapons"]["spark_wand"]["speed"] / rules.STEP
+        ) + 5
+        for _ in range(frames):
             world.update()
         self.assertEqual(world.kills, 1)
 

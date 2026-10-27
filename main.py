@@ -171,7 +171,8 @@ def draw_scene(screen, world, images, cam_x, cam_y, width, height):
         screen.blit(ring, (round(hx) - size // 2, round(hy) - size // 2))
 
     for gem in world.gems:
-        blit_centred(screen, images["gem"], gem.x - cam_x, gem.y - cam_y)
+        picture = images.get(f"gem_{gem.xp}", images["gem"])
+        blit_centred(screen, picture, gem.x - cam_x, gem.y - cam_y)
 
     spark_radius = int(world.config["weapons"]["spark_wand"]["spark_radius"])
     for spark in world.sparks:
@@ -322,10 +323,15 @@ async def main():
     small_font = pygame.font.Font(None, 24)
     images = {
         "hero": load_image("hero.png"),
-        "gem": load_image("gem.png"),
         "sword": load_image("sword.png"),
         "floor": load_image("floor.png"),
     }
+    gem_xps = sorted(
+        {stats["xp"] for stats in config["enemies"].values() if stats.get("xp", 0) > 0}
+    )
+    for xp in gem_xps:
+        images[f"gem_{xp}"] = load_image(f"gem_{xp}.png")
+    images["gem"] = images[f"gem_{gem_xps[0]}"]
     for key, stats in config["enemies"].items():
         image = load_image(stats["picture"])
         scale = stats.get("draw_scale", 1.0)
